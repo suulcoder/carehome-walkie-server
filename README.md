@@ -6,13 +6,40 @@ WebSocket relay server and resilience testing simulator for the carehome walkie-
 
 ---
 
+## Production (Render)
+
+The relay server is deployed and used by default by the mobile app.
+
+| Endpoint | URL |
+|---|---|
+| Health check | `https://carehome-walkie-server.onrender.com/health` |
+| WebSocket | `wss://carehome-walkie-server.onrender.com/ws` |
+
+Verify:
+
+```bash
+curl https://carehome-walkie-server.onrender.com/health
+# → {"status":"ok","ts":...}
+```
+
+Mobile app config ([`carehome-walkie-mobile/src/config.ts`](https://github.com/suulcoder/carehome-walkie-mobile/blob/main/src/config.ts)):
+
+```typescript
+export const WS_URL = "wss://carehome-walkie-server.onrender.com/ws";
+```
+
+> **Cold starts:** Render free tier sleeps after ~15 min idle. First request may take ~30s.
+
+---
+
 ## Contents
 
 | Folder | What it is |
 |---|---|
 | `server/` | Node.js WebSocket relay — broadcasts PTT audio to all peers |
 | `simulator/` | Proxy + headless fake client for resilience testing |
-| `render.yaml` | One-click Render free-tier deployment |
+| `Dockerfile` | Used by Render for deployment |
+| `render.yaml` | Blueprint for Native Node deploy (alternative) |
 
 ---
 
@@ -23,7 +50,17 @@ WebSocket relay server and resilience testing simulator for the carehome walkie-
 
 ---
 
-## 1. Start the relay server (local)
+## Quick start (use production — no server setup)
+
+1. Clone and run the [mobile app](https://github.com/suulcoder/carehome-walkie-mobile).
+2. The app connects to `wss://carehome-walkie-server.onrender.com/ws` out of the box.
+3. Open on two devices, enter different names, test push-to-talk.
+
+---
+
+## Local development
+
+Run the relay server on your machine when you want to develop or debug the backend without Render.
 
 ```bash
 cd server
@@ -31,133 +68,24 @@ npm install
 npm run dev
 ```
 
-Server listens on:
-- HTTP: `http://localhost:8080` (health check at `/health`)
-- WebSocket: `ws://localhost:8080/ws`
+| Endpoint | URL |
+|---|---|
+| Health check | `http://localhost:8080/health` |
+| WebSocket | `ws://localhost:8080/ws` |
+
+Then change `WS_URL` in the mobile app — see the mobile README section **Local development**.
 
 ---
 
-## 2. Start the resilience simulator proxy
+## Resilience simulator
 
-The proxy sits between the mobile app and the server, injecting bad network conditions.
+The simulator runs **on your laptop**. It injects latency, packet loss, disconnects, and bandwidth throttling between the app and the backend.
+
+### Against production (Render)
 
 ```bash
 cd simulator
 npm install
-npm start -- --target ws://localhost:8080/ws --listen 9090
-```
-
-Point the mobile app at `ws://<laptop-ip>:9090` instead of the server directly.
-
-### All proxy flags
-
-| Flag | Default | Purpose |
-|---|---|---|
-| `--target <url>` | `ws://localhost:8080/ws` | Upstream relay server URL |
-| `--listen <port>` | `9090` | Port the proxy listens on |
-| `--latency <ms>` | `0` | Delay every message in both directions |
-| `--drop-rate <0-1>` | `0` | Randomly drop messages (simulates packet loss) |
-| `--disconnect-every <sec>` | `0` (off) | Force-close connection on interval |
-| `--bandwidth-kbps <kbps>` | `0` (unlimited) | Throttle throughput |
-
----
-
-## 3. Run automated resilience tests (headless fake clients)
-
-No phone needed. Starts the server internally, runs all 6 scenarios, prints pass/fail.
-
-```bash
-cd simulator
-npm run test:resilience
-```
-
-Exit code `0` = all passed. Non-zero = check the output for which scenario failed.
-
----
-
-## 4. All resilience test scenarios
-
-Use these with the proxy and two instances of the mobile app (or two emulators).
-
-| # | Scenario | Proxy command |
-|---|---|---|
-| 1 | Patchy Wi-Fi | `npm start -- --target ws://localhost:8080/ws --listen 9090 --drop-rate 0.2 --latency 500` |
-| 2 | Short dropout | `npm start -- --target ws://localhost:8080/ws --listen 9090 --disconnect-every 10` |
-| 3 | High latency | `npm start -- --target ws://localhost:8080/ws --listen 9090 --latency 800` |
-| 4 | Total offline | Start proxy, use app, then `Ctrl+C` the proxy for 30s, restart it |
-| 5 | Slow bandwidth | `npm start -- --target ws://localhost:8080/ws --listen 9090 --bandwidth-kbps 32 --latency 200` |
-| 6 | Worst case combo | `npm start -- --target ws://localhost:8080/ws --listen 9090 --drop-rate 0.15 --latency 400 --bandwidth-kbps 48 --disconnect-every 20` |
-
-**What to verify for each scenario:**
-1. The connection banner on the mobile app changes colour correctly (green/amber/red).
-2. The queue count increases when offline and drains when reconnected.
-3. The listening device hears every completed PTT message — no silent drops.
-
----
-
-## 5. Deploy to Render (free, $0)
-
-**Production URL:** [https://carehome-walkie-server.onrender.com](https://carehome-walkie-server.onrender.com)
-
-| Endpoint | URL |
-|---|---|
-| Health check | `https://carehome-walkie-server.onrender.com/health` |
-| WebSocket | `wss://carehome-walkie-server.onrender.com/ws` |
-
-### Option A — Docker (recommended if Render created a Docker service)
-
-This repo includes a [`Dockerfile`](./Dockerfile) at the root. Render will build it automatically.
-
-1. Connect GitHub repo in Render → **New Web Service** → select repo.
-2. **Environment:** Docker (Render detects the Dockerfile).
-3. **Health Check Path:** `/health`
-4. Deploy.
-
-If you see `open Dockerfile: no such file or directory`, push the latest `main` branch (includes the Dockerfile) and redeploy.
-
-### Option B — Native Node (via Blueprint)
-
-1. Render → **New → Blueprint** → connect repo.
-2. Render reads [`render.yaml`](./render.yaml): `rootDir: server`, Node runtime, build/start commands.
-
-### Mobile app config
-
-In `carehome-walkie-mobile/src/config.ts`:
-
-```typescript
-export const WS_URL = "wss://carehome-walkie-server.onrender.com/ws";
-```
-
-Verify deploy:
-
-```bash
-curl https://carehome-walkie-server.onrender.com/health
-# → {"status":"ok","ts":...}
-```
-
-> **Cold starts:** Render free tier sleeps after ~15 min idle. First request may take ~30s. The mobile app reconnect loop handles this.
-
-### Troubleshooting deploy
-
-| Log / error | Fix |
-|---|---|
-| `no such file or directory` (Dockerfile) | Pull latest `main` — Dockerfile is at repo root |
-| `we don't have access to your repo` | Render Dashboard → Account Settings → connect GitHub; grant access to `suulcoder/carehome-walkie-server` |
-| Build succeeds but WS fails | Use `wss://` (not `ws://`) in the mobile app for Render |
-| Health check fails | Set path to `/health` in Render service settings |
-
----
-
-## 5b. Resilience simulator with backend on Render
-
-The simulator runs **on your laptop**, not on Render. It sits between the phone and Render:
-
-```
-Phone → proxy (your Mac :9090) → Render (wss://carehome-walkie-server.onrender.com/ws)
-```
-
-```bash
-cd simulator
 npm start -- \
   --target wss://carehome-walkie-server.onrender.com/ws \
   --listen 9090 \
@@ -165,30 +93,72 @@ npm start -- \
   --latency 500
 ```
 
-Point the mobile app at the **proxy**, not Render directly:
+Point the mobile app at the proxy (`ws://<laptop-ip>:9090`), not Render directly.
 
-```typescript
-// Physical device on same Wi-Fi as your laptop
-export const WS_URL = "ws://192.168.1.42:9090";
+### Against local server
+
+```bash
+npm start -- --target ws://localhost:8080/ws --listen 9090 --drop-rate 0.2 --latency 500
 ```
 
-Automated tests (`npm run test:resilience`) still use a **local** server — they do not hit Render.
+### Proxy flags
+
+| Flag | Default | Purpose |
+|---|---|---|
+| `--target <url>` | `ws://localhost:8080/ws` | Upstream server (`wss://carehome-walkie-server.onrender.com/ws` for Render) |
+| `--listen <port>` | `9090` | Port the proxy listens on |
+| `--latency <ms>` | `0` | Delay every message in both directions |
+| `--drop-rate <0-1>` | `0` | Randomly drop messages (simulates packet loss) |
+| `--disconnect-every <sec>` | `0` (off) | Force-close connection on interval |
+| `--bandwidth-kbps <kbps>` | `0` (unlimited) | Throttle throughput |
+
+### Manual test scenarios
+
+| # | Scenario | Command |
+|---|---|---|
+| 1 | Patchy Wi-Fi | `npm start -- --target wss://carehome-walkie-server.onrender.com/ws --listen 9090 --drop-rate 0.2 --latency 500` |
+| 2 | Short dropout | `npm start -- --target wss://carehome-walkie-server.onrender.com/ws --listen 9090 --disconnect-every 10` |
+| 3 | High latency | `npm start -- --target wss://carehome-walkie-server.onrender.com/ws --listen 9090 --latency 800` |
+| 4 | Total offline | Start proxy, use app, `Ctrl+C` proxy for 30s, restart |
+| 5 | Slow bandwidth | `npm start -- --target wss://carehome-walkie-server.onrender.com/ws --listen 9090 --bandwidth-kbps 32 --latency 200` |
+| 6 | Worst case combo | `npm start -- --target wss://carehome-walkie-server.onrender.com/ws --listen 9090 --drop-rate 0.15 --latency 400 --bandwidth-kbps 48 --disconnect-every 20` |
+
+For local server testing, replace `--target` with `ws://localhost:8080/ws`.
+
+**What to verify:** connection banner colours, queue count, audio heard on the listening device.
+
+### Automated tests (headless, no phone)
+
+Uses a **local** server internally — does not hit Render.
+
+```bash
+cd simulator
+npm run test:resilience
+```
+
+Exit code `0` = all 6 scenarios passed.
 
 ---
 
-## 6. Verify with two devices
+## Deploy / redeploy to Render
 
-```bash
-# Terminal 1 — server
-cd server && npm run dev
+Already live at [carehome-walkie-server.onrender.com](https://carehome-walkie-server.onrender.com).
 
-# Terminal 2 — proxy (optional, for scenario testing)
-cd simulator && npm start -- --target ws://localhost:8080/ws --listen 9090 --latency 200
+To redeploy after pushing to `main`:
 
-# Then open the mobile app on two devices/emulators
-# Device A: enter name "Alice", hold PTT and speak
-# Device B: enter name "Bob", listen for audio
-```
+1. Render Dashboard → service → **Manual Deploy** → latest commit.
+2. Or enable auto-deploy on push.
+
+The repo includes a [`Dockerfile`](./Dockerfile) (Render Docker) and [`render.yaml`](./render.yaml) (Blueprint / Native Node). Health check path: `/health`.
+
+### Troubleshooting
+
+| Log / error | Fix |
+|---|---|
+| `open Dockerfile: no such file or directory` | Pull latest `main` — Dockerfile is at repo root |
+| `we don't have access to your repo` | Render → Account Settings → connect GitHub; grant access to the repo |
+| WS connection fails from app | Use `wss://` (not `ws://`) for Render |
+| Health check fails | Set path to `/health` in Render service settings |
 
 ---
 
@@ -215,4 +185,4 @@ Server → Client
   pong          { type }
 ```
 
-See [RESILIENCE.md](./RESILIENCE.md) for how the protocol supports message queueing and replay.
+See [RESILIENCE.md](./RESILIENCE.md) for message queueing, replay, and simulator details.

@@ -20,6 +20,15 @@ Mobile App / Fake Client
 
 This lets you reproduce specific network conditions deterministically, without needing a real bad Wi-Fi network.
 
+**Backend URL for `--target`:**
+
+| Environment | `--target` value |
+|---|---|
+| Production (default) | `wss://carehome-walkie-server.onrender.com/ws` |
+| Local server | `ws://localhost:8080/ws` |
+
+The mobile app defaults to production. When using the proxy, point the app at `ws://<laptop-ip>:9090` instead of Render directly.
+
 ---
 
 ## Proxy flags
