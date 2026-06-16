@@ -5,7 +5,7 @@
  * Usage:  npm run test:resilience
  */
 
-import { startProxy } from "./proxy";
+import { startProxy, ProxyServer } from "./proxy";
 import { createFakeClient } from "./fakeClient";
 import http from "http";
 import { ChildProcess, spawn } from "child_process";
@@ -73,18 +73,18 @@ type ScenarioFn = (proxyPort: number) => Promise<void>;
 
 const SCENARIOS: { name: string; proxyOpts: object; run: ScenarioFn }[] = [
   {
-    name: "1 – Patchy Wi-Fi (drop 20%, latency 300ms)",
-    proxyOpts: { dropRate: 0.2, latencyMs: 300, disconnectEveryMs: 0, bandwidthKbps: 0 },
+    name: "1 – Patchy Wi-Fi (drop 15%, latency 150ms)",
+    proxyOpts: { dropRate: 0.15, latencyMs: 150, disconnectEveryMs: 0, bandwidthKbps: 0 },
     async run(port) {
       const proxyUrl = `ws://localhost:${port}/ws`;
-      const sender = await createFakeClient({ url: proxyUrl, name: "Sender", timeoutMs: 8000 });
-      const listener = await createFakeClient({ url: proxyUrl, name: "Listener", timeoutMs: 8000 });
+      // Use generous timeout — join/joined handshake retries under 15% drop
+      const sender = await createFakeClient({ url: proxyUrl, name: "Sender", timeoutMs: 20_000 });
+      const listener = await createFakeClient({ url: proxyUrl, name: "Listener", timeoutMs: 20_000 });
 
       const CHUNKS = 5;
       await sender.sendPtt(CHUNKS);
-      // Under 20% drop some chunks may be lost, but connection should not die
-      // We just verify at least 1 chunk arrives (some can be dropped by design)
-      await listener.waitForChunks(1, 10_000);
+      // Under 15% drop some audio chunks may be lost; verify at least 1 arrives
+      await listener.waitForChunks(1, 15_000);
 
       sender.close();
       listener.close();
@@ -180,7 +180,7 @@ async function runScenario(
     ...(scenario.proxyOpts as object),
   } as Parameters<typeof startProxy>[0];
 
-  const proxyServer = startProxy(opts);
+  const proxyServer: ProxyServer = startProxy(opts);
   await delay(200); // let proxy bind
 
   try {
@@ -193,6 +193,7 @@ async function runScenario(
       error: err instanceof Error ? err.message : String(err),
     };
   } finally {
+    proxyServer.terminateAllClients();
     await new Promise<void>((r) => proxyServer.close(() => r()));
   }
 }

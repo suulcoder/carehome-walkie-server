@@ -95,7 +95,11 @@ async function forwardMessage(
   }
 }
 
-export function startProxy(opts: ProxyOptions): http.Server {
+export interface ProxyServer extends http.Server {
+  terminateAllClients(): void;
+}
+
+export function startProxy(opts: ProxyOptions): ProxyServer {
   console.log(`[proxy] listening on :${opts.listenPort}`);
   console.log(`[proxy] target: ${opts.target}`);
   console.log(
@@ -116,6 +120,10 @@ export function startProxy(opts: ProxyOptions): http.Server {
     const throttle = new BandwidthThrottle(opts.bandwidthKbps);
     const serverWs = new WebSocket(opts.target);
 
+    // Buffer messages arriving from the client before the server connection opens
+    const pendingToServer: WebSocket.RawData[] = [];
+    let serverReady = false;
+
     let disconnectTimer: NodeJS.Timeout | null = null;
 
     const scheduleDisconnect = () => {
@@ -129,10 +137,20 @@ export function startProxy(opts: ProxyOptions): http.Server {
 
     serverWs.on("open", () => {
       console.log(`[proxy] connected to server`);
+      serverReady = true;
       scheduleDisconnect();
+      // Flush any messages that arrived before the server connected
+      for (const buffered of pendingToServer) {
+        forwardMessage(clientWs, serverWs, buffered, opts, throttle, "C→S").catch(() => {});
+      }
+      pendingToServer.length = 0;
     });
 
     clientWs.on("message", (data) => {
+      if (!serverReady) {
+        pendingToServer.push(data);
+        return;
+      }
       forwardMessage(clientWs, serverWs, data, opts, throttle, "C→S").catch(() => {});
     });
 
@@ -154,8 +172,13 @@ export function startProxy(opts: ProxyOptions): http.Server {
     clientWs.on("error", (e) => console.error("[proxy] client ws error:", e.message));
   });
 
+  const proxyServer = httpServer as ProxyServer;
+  proxyServer.terminateAllClients = () => {
+    wss.clients.forEach((c) => c.terminate());
+  };
+
   httpServer.listen(opts.listenPort);
-  return httpServer;
+  return proxyServer;
 }
 
 // Only run when executed directly (not imported by runScenarios)

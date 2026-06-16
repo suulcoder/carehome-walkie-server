@@ -35,11 +35,23 @@ export function createFakeClient(opts: FakeClientOptions): Promise<FakeClient> {
     let connected = false;
 
     const timeoutId = setTimeout(() => {
+      if (joinInterval) { clearInterval(joinInterval); joinInterval = null; }
+      ws.terminate();
       reject(new Error(`[fakeClient:${opts.name}] connection timeout`));
     }, opts.timeoutMs ?? 10_000);
 
+    // Retry join every 1.5s in case it was dropped by a lossy proxy
+    let joinInterval: NodeJS.Timeout | null = null;
+
+    const sendJoin = () => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "join", name: opts.name, channel: "carehome-1" }));
+      }
+    };
+
     ws.on("open", () => {
-      ws.send(JSON.stringify({ type: "join", name: opts.name, channel: "carehome-1" }));
+      sendJoin();
+      joinInterval = setInterval(sendJoin, 1500);
     });
 
     ws.on("message", (raw) => {
@@ -52,6 +64,7 @@ export function createFakeClient(opts: FakeClientOptions): Promise<FakeClient> {
 
       if (msg.type === "joined") {
         clearTimeout(timeoutId);
+        if (joinInterval) { clearInterval(joinInterval); joinInterval = null; }
         connected = true;
         resolve(client);
       }

@@ -10,6 +10,14 @@ interface Client {
 // Single hardcoded channel — all clients are in "carehome-1"
 const clients = new Map<string, Client>();
 
+export function resendJoined(id: string, ws: WebSocket): void {
+  const peers: PeerInfo[] = [];
+  clients.forEach((c) => {
+    if (c.id !== id) peers.push({ id: c.id, name: c.name });
+  });
+  send(ws, { type: "joined", clientId: id, peers });
+}
+
 export function addClient(id: string, name: string, ws: WebSocket): void {
   const peer: PeerInfo = { id, name };
 

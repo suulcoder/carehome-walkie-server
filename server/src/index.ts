@@ -8,6 +8,7 @@ import {
   handlePttStart,
   handleAudioChunk,
   handlePttEnd,
+  resendJoined,
 } from "./room";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -45,6 +46,9 @@ wss.on("connection", (ws: WebSocket) => {
       if (!registered) {
         registered = true;
         addClient(clientId, msg.name, ws);
+      } else {
+        // Client retried join (e.g. joined response was dropped)  re-send joined
+        resendJoined(clientId, ws);
       }
       return;
     }
