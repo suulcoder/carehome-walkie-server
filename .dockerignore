@@ -1,0 +1,7 @@
+node_modules
+server/node_modules
+simulator/node_modules
+server/dist
+.git
+*.md
+simulator

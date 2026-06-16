@@ -97,16 +97,82 @@ Use these with the proxy and two instances of the mobile app (or two emulators).
 
 ## 5. Deploy to Render (free, $0)
 
-1. Fork or push this repo to GitHub.
-2. Go to [render.com](https://render.com) → New → Blueprint.
-3. Connect your GitHub repo — Render will find `render.yaml` and provision the service automatically.
-4. Copy the service URL (e.g. `https://carehome-walkie-server.onrender.com`).
-5. In the mobile app `src/config.ts`, set:
-   ```typescript
-   export const WS_URL = "wss://carehome-walkie-server.onrender.com/ws";
-   ```
+**Production URL:** [https://carehome-walkie-server.onrender.com](https://carehome-walkie-server.onrender.com)
 
-> **Note on cold starts**: Render free tier sleeps after ~15 min of idle. The first connection after sleep takes ~30s. The mobile app handles this with its reconnect loop — the banner shows "Connecting…" and automatically joins once the server wakes up.
+| Endpoint | URL |
+|---|---|
+| Health check | `https://carehome-walkie-server.onrender.com/health` |
+| WebSocket | `wss://carehome-walkie-server.onrender.com/ws` |
+
+### Option A — Docker (recommended if Render created a Docker service)
+
+This repo includes a [`Dockerfile`](./Dockerfile) at the root. Render will build it automatically.
+
+1. Connect GitHub repo in Render → **New Web Service** → select repo.
+2. **Environment:** Docker (Render detects the Dockerfile).
+3. **Health Check Path:** `/health`
+4. Deploy.
+
+If you see `open Dockerfile: no such file or directory`, push the latest `main` branch (includes the Dockerfile) and redeploy.
+
+### Option B — Native Node (via Blueprint)
+
+1. Render → **New → Blueprint** → connect repo.
+2. Render reads [`render.yaml`](./render.yaml): `rootDir: server`, Node runtime, build/start commands.
+
+### Mobile app config
+
+In `carehome-walkie-mobile/src/config.ts`:
+
+```typescript
+export const WS_URL = "wss://carehome-walkie-server.onrender.com/ws";
+```
+
+Verify deploy:
+
+```bash
+curl https://carehome-walkie-server.onrender.com/health
+# → {"status":"ok","ts":...}
+```
+
+> **Cold starts:** Render free tier sleeps after ~15 min idle. First request may take ~30s. The mobile app reconnect loop handles this.
+
+### Troubleshooting deploy
+
+| Log / error | Fix |
+|---|---|
+| `no such file or directory` (Dockerfile) | Pull latest `main` — Dockerfile is at repo root |
+| `we don't have access to your repo` | Render Dashboard → Account Settings → connect GitHub; grant access to `suulcoder/carehome-walkie-server` |
+| Build succeeds but WS fails | Use `wss://` (not `ws://`) in the mobile app for Render |
+| Health check fails | Set path to `/health` in Render service settings |
+
+---
+
+## 5b. Resilience simulator with backend on Render
+
+The simulator runs **on your laptop**, not on Render. It sits between the phone and Render:
+
+```
+Phone → proxy (your Mac :9090) → Render (wss://carehome-walkie-server.onrender.com/ws)
+```
+
+```bash
+cd simulator
+npm start -- \
+  --target wss://carehome-walkie-server.onrender.com/ws \
+  --listen 9090 \
+  --drop-rate 0.2 \
+  --latency 500
+```
+
+Point the mobile app at the **proxy**, not Render directly:
+
+```typescript
+// Physical device on same Wi-Fi as your laptop
+export const WS_URL = "ws://192.168.1.42:9090";
+```
+
+Automated tests (`npm run test:resilience`) still use a **local** server — they do not hit Render.
 
 ---
 
