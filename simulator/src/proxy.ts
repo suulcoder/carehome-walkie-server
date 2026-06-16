@@ -1,0 +1,164 @@
+/**
+ * Resilience Simulator Proxy
+ *
+ * Sits between the mobile app (or fake client) and the WS relay server.
+ * Injects: latency, packet drops, forced disconnects, bandwidth throttling.
+ *
+ * Usage:
+ *   npm start -- --target ws://localhost:8080/ws --listen 9090 --latency 300 --drop-rate 0.1
+ */
+
+import http from "http";
+import WebSocket, { WebSocketServer } from "ws";
+
+export interface ProxyOptions {
+  target: string;
+  listenPort: number;
+  latencyMs: number;
+  dropRate: number;
+  disconnectEveryMs: number;
+  bandwidthKbps: number; // 0 = unlimited
+}
+
+function parseArgs(): ProxyOptions {
+  const args = process.argv.slice(2);
+  const get = (flag: string, def: string) => {
+    const i = args.indexOf(flag);
+    return i !== -1 && args[i + 1] ? args[i + 1] : def;
+  };
+  return {
+    target: get("--target", "ws://localhost:8080/ws"),
+    listenPort: Number(get("--listen", "9090")),
+    latencyMs: Number(get("--latency", "0")),
+    dropRate: Number(get("--drop-rate", "0")),
+    disconnectEveryMs: Number(get("--disconnect-every", "0")) * 1000,
+    bandwidthKbps: Number(get("--bandwidth-kbps", "0")),
+  };
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function shouldDrop(rate: number): boolean {
+  return rate > 0 && Math.random() < rate;
+}
+
+class BandwidthThrottle {
+  private bytesAllowed = 0;
+  private lastRefill = Date.now();
+
+  constructor(private kbps: number) {}
+
+  async throttle(bytes: number): Promise<void> {
+    if (this.kbps <= 0) return;
+    const now = Date.now();
+    const elapsed = now - this.lastRefill;
+    this.bytesAllowed += (this.kbps * 1024 * elapsed) / 1000;
+    this.lastRefill = now;
+
+    if (this.bytesAllowed >= bytes) {
+      this.bytesAllowed -= bytes;
+      return;
+    }
+    // Need to wait for budget to refill
+    const deficit = bytes - this.bytesAllowed;
+    const waitMs = (deficit / (this.kbps * 1024)) * 1000;
+    this.bytesAllowed = 0;
+    await delay(waitMs);
+  }
+}
+
+async function forwardMessage(
+  src: WebSocket,
+  dst: WebSocket,
+  data: WebSocket.RawData,
+  opts: ProxyOptions,
+  throttle: BandwidthThrottle,
+  label: string
+): Promise<void> {
+  if (shouldDrop(opts.dropRate)) {
+    console.log(`[proxy] ${label} DROP`);
+    return;
+  }
+
+  const buf = Buffer.isBuffer(data) ? data : Buffer.from(data.toString());
+
+  if (opts.latencyMs > 0) {
+    await delay(opts.latencyMs);
+  }
+
+  await throttle.throttle(buf.byteLength);
+
+  if (dst.readyState === WebSocket.OPEN) {
+    dst.send(buf);
+  }
+}
+
+export function startProxy(opts: ProxyOptions): http.Server {
+  console.log(`[proxy] listening on :${opts.listenPort}`);
+  console.log(`[proxy] target: ${opts.target}`);
+  console.log(
+    `[proxy] latency=${opts.latencyMs}ms drop=${opts.dropRate} disconnectEvery=${
+      opts.disconnectEveryMs / 1000
+    }s bandwidth=${opts.bandwidthKbps || "unlimited"}kbps`
+  );
+
+  const httpServer = http.createServer((_, res) => {
+    res.writeHead(200);
+    res.end("resilience proxy");
+  });
+
+  const wss = new WebSocketServer({ server: httpServer });
+
+  wss.on("connection", (clientWs) => {
+    console.log(`[proxy] client connected`);
+    const throttle = new BandwidthThrottle(opts.bandwidthKbps);
+    const serverWs = new WebSocket(opts.target);
+
+    let disconnectTimer: NodeJS.Timeout | null = null;
+
+    const scheduleDisconnect = () => {
+      if (opts.disconnectEveryMs <= 0) return;
+      disconnectTimer = setTimeout(() => {
+        console.log(`[proxy] forcing disconnect`);
+        serverWs.terminate();
+        clientWs.terminate();
+      }, opts.disconnectEveryMs);
+    };
+
+    serverWs.on("open", () => {
+      console.log(`[proxy] connected to server`);
+      scheduleDisconnect();
+    });
+
+    clientWs.on("message", (data) => {
+      forwardMessage(clientWs, serverWs, data, opts, throttle, "C→S").catch(() => {});
+    });
+
+    serverWs.on("message", (data) => {
+      forwardMessage(serverWs, clientWs, data, opts, throttle, "S→C").catch(() => {});
+    });
+
+    clientWs.on("close", () => {
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      serverWs.terminate();
+    });
+
+    serverWs.on("close", () => {
+      if (disconnectTimer) clearTimeout(disconnectTimer);
+      clientWs.terminate();
+    });
+
+    serverWs.on("error", (e) => console.error("[proxy] server ws error:", e.message));
+    clientWs.on("error", (e) => console.error("[proxy] client ws error:", e.message));
+  });
+
+  httpServer.listen(opts.listenPort);
+  return httpServer;
+}
+
+// Only run when executed directly (not imported by runScenarios)
+if (require.main === module) {
+  startProxy(parseArgs());
+}
