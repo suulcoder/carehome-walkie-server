@@ -24,6 +24,8 @@ export function resendJoined(id: string, ws: WebSocket): void {
 }
 
 export function addClient(id: string, name: string, ws: WebSocket, since = 0): void {
+  evictStaleClientsWithName(name, id);
+
   const peer: PeerInfo = { id, name };
 
   broadcast({ type: "peer_joined", peer }, id);
@@ -83,6 +85,19 @@ function replayMissedSessions(ws: WebSocket, since: number): void {
 export function removeClient(id: string): void {
   clients.delete(id);
   broadcast({ type: "peer_left", peerId: id }, id);
+}
+
+function evictStaleClientsWithName(name: string, keepId: string): void {
+  for (const [existingId, client] of clients) {
+    if (existingId === keepId || client.name !== name) continue;
+    try {
+      client.ws.close(4000, "replaced by newer connection");
+    } catch {
+      // non-fatal
+    }
+    clients.delete(existingId);
+    broadcast({ type: "peer_left", peerId: existingId });
+  }
 }
 
 export function handlePttStart(senderId: string, sessionId: string): void {
