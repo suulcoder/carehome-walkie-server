@@ -9,6 +9,7 @@ import {
   handleAudioChunk,
   handlePttEnd,
   resendJoined,
+  replayMissedSessionsForClient,
 } from "./room";
 
 const PORT = Number(process.env.PORT ?? 8080);
@@ -45,10 +46,11 @@ wss.on("connection", (ws: WebSocket) => {
     if (msg.type === "join") {
       if (!registered) {
         registered = true;
-        addClient(clientId, msg.name, ws);
+        addClient(clientId, msg.name, ws, msg.since ?? 0);
       } else {
         // Client retried join (e.g. joined response was dropped) ù re-send joined
         resendJoined(clientId, ws);
+        replayMissedSessionsForClient(clientId, msg.since ?? 0);
       }
       return;
     }

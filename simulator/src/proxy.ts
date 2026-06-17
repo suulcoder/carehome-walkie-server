@@ -69,6 +69,31 @@ class BandwidthThrottle {
   }
 }
 
+function messageDataToString(data: string | ArrayBuffer | Blob): string {
+  if (typeof data === "string") return data;
+  if (data instanceof ArrayBuffer) {
+    return new TextDecoder("utf-8").decode(data);
+  }
+  return String(data);
+}
+
+/** Control frames that must not be dropped — keeps the session alive under packet loss. */
+function isControlPayload(data: WebSocket.RawData): boolean {
+  try {
+    const msg = JSON.parse(data.toString()) as { type?: string };
+    return (
+      msg.type === "ping" ||
+      msg.type === "pong" ||
+      msg.type === "join" ||
+      msg.type === "joined" ||
+      msg.type === "ack"
+    );
+  } catch {
+    const text = data.toString().trim();
+    return text === "ping" || text === "pong";
+  }
+}
+
 async function forwardMessage(
   src: WebSocket,
   dst: WebSocket,
@@ -77,7 +102,7 @@ async function forwardMessage(
   throttle: BandwidthThrottle,
   label: string
 ): Promise<void> {
-  if (shouldDrop(opts.dropRate)) {
+  if (!isControlPayload(data) && shouldDrop(opts.dropRate)) {
     console.log(`[proxy] ${label} DROP`);
     return;
   }
