@@ -84,19 +84,22 @@ export function addClient(id: string, name: string, ws: WebSocket, since = 0): v
     if (c.id !== id) peers.push({ id: c.id, name: c.name });
   });
   send(ws, { type: "joined", clientId: id, peers });
-  replayMissedSessions(ws, since);
+  replayMissedSessions(ws, since, name);
   sendHistorySync(ws);
 }
 
 export function replayMissedSessionsForClient(id: string, since: number): void {
   const client = clients.get(id);
   if (!client) return;
-  replayMissedSessions(client.ws, since);
+  replayMissedSessions(client.ws, since, client.name);
   sendHistorySync(client.ws);
 }
 
-function replayMissedSessions(ws: WebSocket, since: number): void {
-  const missed = getMissedSince(since);
+function replayMissedSessions(ws: WebSocket, since: number, selfName: string): void {
+  const selfKey = selfName.trim().toLowerCase();
+  const missed = getMissedSince(since).filter(
+    (session) => session.from.name.trim().toLowerCase() !== selfKey
+  );
   if (missed.length === 0) return;
 
   for (const session of missed) {
