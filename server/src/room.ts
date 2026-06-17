@@ -73,11 +73,22 @@ export function handleAudioChunk(
   send(sender.ws, { type: "ack", sessionId, lastSeq: seq });
 }
 
-export function handlePttEnd(senderId: string, sessionId: string): void {
+export function handlePttEnd(
+  senderId: string,
+  sessionId: string,
+  sampleRate?: number,
+  chunkCount?: number
+): void {
   const sender = clients.get(senderId);
   if (!sender) return;
   broadcast(
-    { type: "ptt_end", sessionId, from: { id: sender.id, name: sender.name } },
+    {
+      type: "ptt_end",
+      sessionId,
+      from: { id: sender.id, name: sender.name },
+      sampleRate,
+      chunkCount,
+    },
     senderId
   );
   send(sender.ws, { type: "ack", sessionId, lastSeq: -1 });

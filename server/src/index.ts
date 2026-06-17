@@ -63,7 +63,7 @@ wss.on("connection", (ws: WebSocket) => {
         handleAudioChunk(clientId, msg.sessionId, msg.seq, msg.pcmBase64);
         break;
       case "ptt_end":
-        handlePttEnd(clientId, msg.sessionId);
+        handlePttEnd(clientId, msg.sessionId, msg.sampleRate, msg.chunkCount);
         break;
     }
   });
