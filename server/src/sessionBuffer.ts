@@ -19,7 +19,8 @@ const active = new Map<string, ActiveSession>();
 const completed: CompletedSession[] = [];
 
 const MAX_COMPLETED = 50;
-const MAX_AGE_MS = 60 * 60 * 1000;
+/** Only expose messages this recent in history_sync / replay. */
+const HISTORY_MAX_AGE_MS = 10 * 60 * 1000;
 
 export function beginSession(sessionId: string, from: PeerInfo): void {
   active.set(sessionId, { sessionId, from, chunks: new Map() });
@@ -53,7 +54,7 @@ export function completeSession(
 }
 
 function prune(): void {
-  const cutoff = Date.now() - MAX_AGE_MS;
+  const cutoff = Date.now() - HISTORY_MAX_AGE_MS;
   while (completed.length > 0 && completed.length > MAX_COMPLETED) {
     completed.shift();
   }
@@ -63,10 +64,15 @@ function prune(): void {
 }
 
 export function getMissedSince(since: number): CompletedSession[] {
-  return completed.filter((session) => session.completedAt > since);
+  const cutoff = Date.now() - HISTORY_MAX_AGE_MS;
+  return completed.filter(
+    (session) => session.completedAt > since && session.completedAt >= cutoff
+  );
 }
 
 export function getRecentHistory(limit = 10): CompletedSession[] {
-  if (completed.length === 0) return [];
-  return completed.slice(-limit).reverse();
+  const cutoff = Date.now() - HISTORY_MAX_AGE_MS;
+  const fresh = completed.filter((session) => session.completedAt >= cutoff);
+  if (fresh.length === 0) return [];
+  return fresh.slice(-limit).reverse();
 }

@@ -95,6 +95,12 @@ export function replayMissedSessionsForClient(id: string, since: number): void {
   sendHistorySync(client.ws);
 }
 
+/** Re-send join ack + inbox snapshot without replaying live audio (duplicate join). */
+export function resendJoinSnapshot(id: string, ws: WebSocket): void {
+  resendJoined(id, ws);
+  sendHistorySync(ws);
+}
+
 function replayMissedSessions(ws: WebSocket, since: number, selfName: string): void {
   const selfKey = selfName.trim().toLowerCase();
   const missed = getMissedSince(since).filter(
