@@ -1,10 +1,12 @@
 import WebSocket from "ws";
-import { PeerInfo, ServerMessage } from "./protocol";
+import { HistoryEntry, PeerInfo, ServerMessage } from "./protocol";
 import {
   beginSession,
   bufferChunk,
   completeSession,
+  CompletedSession,
   getMissedSince,
+  getRecentHistory,
 } from "./sessionBuffer";
 
 interface Client {
@@ -14,6 +16,51 @@ interface Client {
 }
 
 const clients = new Map<string, Client>();
+const HISTORY_LIMIT = 10;
+const DEFAULT_SAMPLE_RATE = 16_000;
+
+function pcmDurationMsFromChunks(chunks: Map<number, string>, sampleRate: number): number {
+  let bytes = 0;
+  chunks.forEach((pcmBase64) => {
+    bytes += Buffer.from(pcmBase64, "base64").length;
+  });
+  return Math.round((bytes / 2 / sampleRate) * 1000);
+}
+
+function sessionToHistoryEntry(session: CompletedSession): HistoryEntry {
+  const chunks = [...session.chunks.entries()]
+    .sort(([a], [b]) => a - b)
+    .map(([seq, pcmBase64]) => ({ seq, pcmBase64 }));
+  const sampleRate = session.sampleRate ?? DEFAULT_SAMPLE_RATE;
+  const chunkCount = session.chunkCount ?? chunks.length;
+
+  return {
+    sessionId: session.sessionId,
+    fromId: session.from.id,
+    fromName: session.from.name,
+    completedAt: session.completedAt,
+    sampleRate,
+    chunkCount,
+    chunks,
+    durationMs: pcmDurationMsFromChunks(session.chunks, sampleRate),
+  };
+}
+
+function sendHistorySync(ws: WebSocket): void {
+  const messages = getRecentHistory(HISTORY_LIMIT).map(sessionToHistoryEntry);
+  send(ws, { type: "history_sync", messages });
+}
+
+function broadcastHistorySync(): void {
+  const messages = getRecentHistory(HISTORY_LIMIT).map(sessionToHistoryEntry);
+  const payload: ServerMessage = { type: "history_sync", messages };
+  const json = JSON.stringify(payload);
+  clients.forEach((client) => {
+    if (client.ws.readyState === WebSocket.OPEN) {
+      client.ws.send(json);
+    }
+  });
+}
 
 export function resendJoined(id: string, ws: WebSocket): void {
   const peers: PeerInfo[] = [];
@@ -38,11 +85,14 @@ export function addClient(id: string, name: string, ws: WebSocket, since = 0): v
   });
   send(ws, { type: "joined", clientId: id, peers });
   replayMissedSessions(ws, since);
+  sendHistorySync(ws);
 }
 
 export function replayMissedSessionsForClient(id: string, since: number): void {
   const client = clients.get(id);
-  if (client) replayMissedSessions(client.ws, since);
+  if (!client) return;
+  replayMissedSessions(client.ws, since);
+  sendHistorySync(client.ws);
 }
 
 function replayMissedSessions(ws: WebSocket, since: number): void {
@@ -156,6 +206,7 @@ export function handlePttEnd(
     senderId
   );
   send(sender.ws, { type: "ack", sessionId, lastSeq: -1 });
+  broadcastHistorySync();
 }
 
 function broadcast(msg: ServerMessage, excludeId?: string): void {

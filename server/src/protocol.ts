@@ -23,9 +23,22 @@ export type ServerMessage =
       replay?: boolean;
     }
   | { type: "ack"; sessionId: string; lastSeq: number }
+  | { type: "history_sync"; messages: HistoryEntry[] }
   | { type: "pong" };
 
 export interface PeerInfo {
   id: string;
   name: string;
+}
+
+/** Serializable history row ? keep in sync with mobile src/inbox/types.ts ServerHistoryEntry */
+export interface HistoryEntry {
+  sessionId: string;
+  fromId: string;
+  fromName: string;
+  completedAt: number;
+  sampleRate: number;
+  chunkCount: number;
+  chunks: Array<{ seq: number; pcmBase64: string }>;
+  durationMs: number;
 }

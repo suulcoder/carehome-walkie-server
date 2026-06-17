@@ -65,3 +65,8 @@ function prune(): void {
 export function getMissedSince(since: number): CompletedSession[] {
   return completed.filter((session) => session.completedAt > since);
 }
+
+export function getRecentHistory(limit = 10): CompletedSession[] {
+  if (completed.length === 0) return [];
+  return completed.slice(-limit).reverse();
+}
