@@ -126,6 +126,7 @@ function replayMissedSessions(ws: WebSocket, since: number, selfName: string): v
         seq,
         pcmBase64,
         from: session.from,
+        replay: true,
       });
     }
 

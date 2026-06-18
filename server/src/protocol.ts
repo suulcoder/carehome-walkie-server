@@ -12,7 +12,7 @@ export type ServerMessage =
   | { type: "peer_joined"; peer: PeerInfo }
   | { type: "peer_left"; peerId: string }
   | { type: "ptt_start"; sessionId: string; from: PeerInfo; replay?: boolean }
-  | { type: "audio_chunk"; sessionId: string; seq: number; pcmBase64: string; from: PeerInfo }
+  | { type: "audio_chunk"; sessionId: string; seq: number; pcmBase64: string; from: PeerInfo; replay?: boolean }
   | {
       type: "ptt_end";
       sessionId: string;
