@@ -48,10 +48,10 @@ export function attachWebSocketServer(server: http.Server): WebSocketServer {
           handlePttStart(clientId, msg.sessionId);
           break;
         case "audio_chunk":
-          handleAudioChunk(clientId, msg.sessionId, msg.seq, msg.pcmBase64, msg.codec);
+          handleAudioChunk(clientId, msg.sessionId, msg.seq, msg.pcmBase64);
           break;
         case "ptt_end":
-          handlePttEnd(clientId, msg.sessionId, msg.sampleRate, msg.chunkCount, msg.codec);
+          handlePttEnd(clientId, msg.sessionId, msg.sampleRate, msg.chunkCount);
           break;
       }
     });

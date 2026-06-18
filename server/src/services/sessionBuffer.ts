@@ -1,11 +1,9 @@
 import { PeerInfo } from "../types/protocol";
-import type { AudioCodec } from "../types/protocol";
 
 interface ActiveSession {
   sessionId: string;
   from: PeerInfo;
   chunks: Map<number, string>;
-  codec?: AudioCodec;
 }
 
 export interface CompletedSession {
@@ -15,7 +13,6 @@ export interface CompletedSession {
   sampleRate?: number;
   chunkCount?: number;
   completedAt: number;
-  codec?: AudioCodec;
 }
 
 const active = new Map<string, ActiveSession>();
@@ -29,23 +26,14 @@ export function beginSession(sessionId: string, from: PeerInfo): void {
   active.set(sessionId, { sessionId, from, chunks: new Map() });
 }
 
-export function bufferChunk(
-  sessionId: string,
-  seq: number,
-  pcmBase64: string,
-  codec?: AudioCodec
-): void {
-  const session = active.get(sessionId);
-  if (!session) return;
-  session.chunks.set(seq, pcmBase64);
-  if (codec) session.codec = codec;
+export function bufferChunk(sessionId: string, seq: number, pcmBase64: string): void {
+  active.get(sessionId)?.chunks.set(seq, pcmBase64);
 }
 
 export function completeSession(
   sessionId: string,
   sampleRate?: number,
-  chunkCount?: number,
-  codec?: AudioCodec
+  chunkCount?: number
 ): CompletedSession | null {
   const session = active.get(sessionId);
   if (!session) return null;
@@ -57,7 +45,6 @@ export function completeSession(
     sampleRate,
     chunkCount,
     completedAt: Date.now(),
-    codec: codec ?? session.codec,
   };
 
   active.delete(sessionId);

@@ -42,7 +42,6 @@ function sessionToHistoryEntry(session: CompletedSession): HistoryEntry {
     chunkCount,
     chunks,
     durationMs: pcmDurationMsFromChunks(session.chunks, sampleRate),
-    codec: session.codec,
   };
 }
 
@@ -127,7 +126,6 @@ function replayMissedSessions(ws: WebSocket, since: number, selfName: string): v
         pcmBase64,
         from: session.from,
         replay: true,
-        codec: session.codec,
       });
     }
 
@@ -139,7 +137,6 @@ function replayMissedSessions(ws: WebSocket, since: number, selfName: string): v
       chunkCount: expected,
       completedAt: session.completedAt,
       replay: true,
-      codec: session.codec,
     });
   }
 }
@@ -177,13 +174,12 @@ export function handleAudioChunk(
   senderId: string,
   sessionId: string,
   seq: number,
-  pcmBase64: string,
-  codec?: import("../types/protocol").AudioCodec
+  pcmBase64: string
 ): void {
   const sender = clients.get(senderId);
   if (!sender) return;
 
-  bufferChunk(sessionId, seq, pcmBase64, codec);
+  bufferChunk(sessionId, seq, pcmBase64);
   broadcast(
     {
       type: "audio_chunk",
@@ -191,7 +187,6 @@ export function handleAudioChunk(
       seq,
       pcmBase64,
       from: { id: sender.id, name: sender.name },
-      codec,
     },
     senderId
   );
@@ -202,13 +197,12 @@ export function handlePttEnd(
   senderId: string,
   sessionId: string,
   sampleRate?: number,
-  chunkCount?: number,
-  codec?: import("../types/protocol").AudioCodec
+  chunkCount?: number
 ): void {
   const sender = clients.get(senderId);
   if (!sender) return;
 
-  const completed = completeSession(sessionId, sampleRate, chunkCount, codec);
+  const completed = completeSession(sessionId, sampleRate, chunkCount);
   broadcast(
     {
       type: "ptt_end",
@@ -217,7 +211,6 @@ export function handlePttEnd(
       sampleRate,
       chunkCount,
       completedAt: completed?.completedAt,
-      codec: completed?.codec ?? codec,
     },
     senderId
   );
