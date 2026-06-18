@@ -1,5 +1,5 @@
 import WebSocket from "ws";
-import { HistoryEntry, PeerInfo, ServerMessage } from "./protocol";
+import { HistoryEntry, PeerInfo, ServerMessage } from "../types/protocol";
 import {
   beginSession,
   bufferChunk,
@@ -8,6 +8,7 @@ import {
   getMissedSince,
   getRecentHistory,
 } from "./sessionBuffer";
+import { DEFAULT_SAMPLE_RATE, HISTORY_LIMIT } from "../config/env";
 
 interface Client {
   ws: WebSocket;
@@ -16,8 +17,6 @@ interface Client {
 }
 
 const clients = new Map<string, Client>();
-const HISTORY_LIMIT = 10;
-const DEFAULT_SAMPLE_RATE = 16_000;
 
 function pcmDurationMsFromChunks(chunks: Map<number, string>, sampleRate: number): number {
   let bytes = 0;

@@ -1,4 +1,4 @@
-import { PeerInfo } from "./protocol";
+import { PeerInfo } from "../types/protocol";
 
 interface ActiveSession {
   sessionId: string;

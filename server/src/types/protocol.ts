@@ -1,4 +1,4 @@
-// Shared protocol types ? keep in sync with mobile repo's src/network/protocol.ts
+// Shared protocol types — keep in sync with mobile repo's src/services/websocket/protocol.ts
 
 export type ClientMessage =
   | { type: "join"; name: string; channel: string; since?: number }
@@ -31,7 +31,7 @@ export interface PeerInfo {
   name: string;
 }
 
-/** Serializable history row ? keep in sync with mobile src/inbox/types.ts ServerHistoryEntry */
+/** Serializable history row — keep in sync with mobile src/features/inbox/types.ts ServerHistoryEntry */
 export interface HistoryEntry {
   sessionId: string;
   fromId: string;
